@@ -19,8 +19,9 @@ public:
         Serial.print("[WiFi] Access Point started. IP: ");
         Serial.println(WiFi.softAPIP());
 
-        // Маршрути
+        // Головна сторінка
         server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+            Serial.println("[WEB LOG] GET / - Serving INDEX_HTML");
             request->send_P(200, "text/html", INDEX_HTML);
         });
 
@@ -40,28 +41,59 @@ public:
 
         // Ендпоінт прийому команд
         server.on("/api/cmd", HTTP_POST, [this](AsyncWebServerRequest *request) {
+            Serial.println("\n[WEB LOG] ---> Incoming POST request to /api/cmd");
+
             if (request->hasParam("cmd", true)) {
                 String cmd = request->getParam("cmd", true)->value();
+                Serial.printf("[WEB LOG] Received command parameter 'cmd': '%s'\n", cmd.c_str());
+                Serial.printf("[WEB LOG] Current FSM State before cmd: %s\n", systemStateToString(fsm.getCurrentState()));
+
                 bool success = false;
 
-                if (cmd == "start") success = fsm.commandStart();
-                else if (cmd == "stop") success = fsm.commandStop();
-                else if (cmd == "fire") success = fsm.commandFire();
+                if (cmd == "start") {
+                    success = fsm.commandStart();
+                } else if (cmd == "stop") {
+                    success = fsm.commandStop();
+                } else if (cmd == "fire") {
+                    success = fsm.commandFire();
+                } else {
+                    Serial.printf("[WEB LOG] Unknown command received: '%s'\n", cmd.c_str());
+                }
 
                 if (success) {
+                    Serial.printf("[WEB LOG] Command '%s' ACCEPTED by FSM. New state: %s\n", 
+                                  cmd.c_str(), systemStateToString(fsm.getCurrentState()));
                     request->send(200, "text/plain", "OK");
                 } else {
+                    Serial.printf("[WEB LOG] ERROR: Command '%s' REJECTED by FSM!\n", cmd.c_str());
                     request->send(400, "text/plain", "Command rejected by Fail-Safe/FSM rules");
                 }
             } else {
+                Serial.println("[WEB LOG] ERROR: Missing 'cmd' parameter in POST request!");
                 request->send(400, "text/plain", "Missing cmd param");
             }
         });
 
-        // Тестовий ендпоінт штучної помилки
+        // Тестовий ендпоінт штучної помилки (Fail-Safe Inject)
         server.on("/api/test/fault", HTTP_POST, [this](AsyncWebServerRequest *request) {
+            Serial.println("\n[WEB LOG] ---> Incoming POST request to /api/test/fault (Injecting Fault)");
+            Serial.printf("[WEB LOG] FSM State before fault: %s\n", systemStateToString(fsm.getCurrentState()));
+
             fsm.injectVoltageFault(2.5f); // Просідання напруги < 3.0V
+            fsm.update();
+
+            Serial.printf("[WEB LOG] Fault injected. FSM State after fault: %s (Reason: %s)\n", 
+                          systemStateToString(fsm.getCurrentState()), 
+                          failSafeReasonToString(fsm.getFailSafeReason()));
+
             request->send(200, "text/plain", "Fault Injected");
+        });
+
+        // Обробка неіснуючих маршрутів (404)
+        server.onNotFound([](AsyncWebServerRequest *request) {
+            Serial.printf("[WEB LOG] WARN: 404 Not Found -> Method: %s, URL: %s\n", 
+                          request->methodToString(), request->url().c_str());
+            request->send(404, "text/plain", "Not found");
         });
 
         server.begin();

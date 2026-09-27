@@ -28,9 +28,21 @@ public:
     unsigned long getArmingRemainingTimeMs() const;
     float getSystemVoltage() const { return voltageMonitor.getVoltage(); }
 
-    // Методи тестування
-    void injectSensorFault() { dummySensor.injectError(true); }
-    void injectVoltageFault(float v) { voltageMonitor.simulateVoltage(v); }
+    // Методи тестування / Fault Injection
+    void injectSensorFault() { 
+        dummySensor.injectError(true); 
+        update(); 
+    }
+    
+    void injectVoltageFault(float v) { 
+        voltageMonitor.simulateVoltage(v); 
+        update(); // Примусова перевірка умов переходу у FAIL_SAFE в тому ж такті
+    }
+
+    void resetFaults() {
+        voltageMonitor.resetSimulation();
+        dummySensor.injectError(false);
+    }
 
 private:
     SystemState currentState;

@@ -52,8 +52,11 @@ void StateMachine::update() {
 }
 
 void StateMachine::checkContinuousSafety() {
+    // Зчитуємо напругу (метод враховує прапорець симуляції isSimulated)
+    float v = voltageMonitor.readVoltage();
+
     if (!voltageMonitor.isVoltageValid()) {
-        if (voltageMonitor.getVoltage() < VOLTAGE_MIN_THRESHOLD) {
+        if (v < VOLTAGE_MIN_THRESHOLD) {
             triggerFailSafe(FailSafeReason::LOW_VOLTAGE);
         } else {
             triggerFailSafe(FailSafeReason::HIGH_VOLTAGE);
@@ -126,6 +129,7 @@ bool StateMachine::commandStart() {
 
 bool StateMachine::commandStop() {
     if (currentState == SystemState::ARMING || currentState == SystemState::ARMED) {
+        resetFaults(); // Скидаємо інжектовані помилки при знятті
         transitionTo(SystemState::SAFE);
         return true;
     }

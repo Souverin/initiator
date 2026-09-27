@@ -81,7 +81,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         .btn-fire { background-color: var(--armed-color); font-size: 1.3em; padding: 18px; }
         .btn-fault { background-color: #6a1b9a; margin-top: 15px; font-size: 0.85em; opacity: 0.8; }
         
-        /* Кольори за станами */
         .state-SAFE { border-color: var(--safe-color); color: #81c784; }
         .state-ARMING { border-color: var(--arming-color); color: #ffb74d; }
         .state-ARMED { border-color: var(--armed-color); color: #ef5350; animation: pulse 1s infinite; }
@@ -112,7 +111,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
         <div class="btn-group">
             <button id="btnStart" class="btn-start" onclick="sendCommand('start')">START (Зведення)</button>
-            <button id="btnStop" class="btn-stop" onclick="sendCommand('stop')">STOP (Предохранитель)</button>
+            <button id="btnStop" class="btn-stop" onclick="sendCommand('stop')">STOP (Запобіжник)</button>
             <button id="btnFire" class="btn-fire" onclick="sendCommand('fire')" disabled>ПІДРИВ / FIRE</button>
             <button class="btn-fault" onclick="injectFault()">Тест: Симуляція Збою (Fail-Safe)</button>
         </div>
@@ -122,6 +121,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         async function updateStatus() {
             try {
                 const response = await fetch('/api/status');
+                if (!response.ok) throw new Error('HTTP status ' + response.status);
+                
                 const data = await response.json();
 
                 const state = data.state;
@@ -132,10 +133,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 stateText.innerText = state;
                 statusBox.className = 'status-box state-' + state;
 
-                document.getElementById('voltageVal').innerText = data.voltage.toFixed(2) + ' V';
+                document.getElementById('voltageVal').innerText = Number(data.voltage).toFixed(2) + ' V';
                 document.getElementById('failReasonVal').innerText = data.fail_reason;
 
-                // Оновлення таймера
                 if (state === 'ARMING') {
                     const totalSec = Math.ceil(data.arming_time_ms / 1000);
                     const min = Math.floor(totalSec / 60);
@@ -149,33 +149,48 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                     timerDisplay.innerText = "00:00";
                 }
 
-                // Керування доступністю кнопок
                 document.getElementById('btnStart').disabled = (state !== 'SAFE');
                 document.getElementById('btnStop').disabled = (state !== 'ARMING' && state !== 'ARMED');
                 document.getElementById('btnFire').disabled = (state !== 'ARMED');
 
             } catch (err) {
-                console.error("Помилка отримання статусу:", err);
+                console.error("[JS LOG] Помилка отримання статусу:", err);
             }
         }
 
         async function sendCommand(cmd) {
+            console.log("[JS LOG] Sending command:", cmd);
             try {
-                await fetch('/api/cmd', {
+                const res = await fetch('/api/cmd', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'cmd=' + cmd
+                    body: 'cmd=' + encodeURIComponent(cmd)
                 });
+                
+                const resText = await res.text();
+                console.log(`[JS LOG] Command response [${res.status}]:`, resText);
+
+                if (!res.ok) {
+                    alert("Команду відхилено сервером: " + resText);
+                }
                 updateStatus();
             } catch (err) {
-                alert("Помилка відправки команди: " + err);
+                console.error("[JS LOG] Помилка відправки команди:", err);
+                alert("Помилка зв'язку з сервером: " + err);
             }
         }
 
         async function injectFault() {
             if (confirm("Згенерувати тестову помилку напруги/датчика?")) {
-                await fetch('/api/test/fault', { method: 'POST' });
-                updateStatus();
+                console.log("[JS LOG] Injecting test fault...");
+                try {
+                    const res = await fetch('/api/test/fault', { method: 'POST' });
+                    const resText = await res.text();
+                    console.log(`[JS LOG] Fault inject response [${res.status}]:`, resText);
+                    updateStatus();
+                } catch (err) {
+                    console.error("[JS LOG] Помилка інжекції збою:", err);
+                }
             }
         }
 
